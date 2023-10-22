@@ -43,7 +43,7 @@ __global__ void emboss(unsigned char* img_in, int* img_out, int height, int widt
         if(rid + 1 < height)
             gradY -= img_in[(rid+1)*width+cid];
         
-        int val = (int) pow(pow(gradX, 2) + pow(gradY, 2), 0.5);
+        int val = gradX + gradY;
         
         img_out[rid*width+cid] = val;
         atomicMin(min, val);
