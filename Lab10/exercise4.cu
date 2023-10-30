@@ -28,7 +28,7 @@ __device__ int co_rank(int k, int* A, int m, int* B, int n) {
     int delta;
     int active = 1;
 
-    while(active) {
+    while(active) 
         if(i > 0 && j < n && A[i-1] > B[j]) {
             delta = ((i - i_low + 1) >> 1);
             j_low = j;
@@ -41,10 +41,8 @@ __device__ int co_rank(int k, int* A, int m, int* B, int n) {
             i = i + delta;
             j = j - delta;
         }
-        else {
+        else 
             active = 0;
-        }
-    }
 
     return i;
 }
