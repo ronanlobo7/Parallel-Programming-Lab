@@ -10,7 +10,7 @@
 
 __global__ void CUDACount(char* A, char* W, int* start_ind, int* len_words, unsigned int l_W, unsigned int* d_count) {
 	int tid = threadIdx.x;
-	if(len_words[tid] < l_W)
+	if(len_words[tid] != l_W)
 		return;
 		
 	int start = start_ind[tid];
