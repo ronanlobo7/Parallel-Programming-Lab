@@ -13,7 +13,7 @@ __global__ void mulMat(float* A, float* B, float* C, int m1, int n1, int n2) {
         float sum = 0;
         for(int k=0; k<n1; k++) 
             sum += A[rid*n1+k] * B[k*n2+cid];
-        C[rid*n1+cid] = sum;
+        C[rid*n2+cid] = sum;
     }
 }	
 
