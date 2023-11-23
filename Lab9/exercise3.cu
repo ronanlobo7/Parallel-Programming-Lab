@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb/stb_image.h"
@@ -10,9 +11,9 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
 
-#include <stdint.h>
-
 #define BLOCK_WIDTH 32
+#define MASK_WIDTH 3
+
 
 __global__ void rgbToGray(unsigned char* img_in, unsigned char* img_out, int height, int width) {
     int rid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -26,28 +27,40 @@ __global__ void rgbToGray(unsigned char* img_in, unsigned char* img_out, int hei
     }
 }
 
-__global__ void emboss(unsigned char* img_in, int* img_out, int height, int width, int* min, int* max) {
+__global__ void conv2D(float* A, float* M, float* R, 
+                        int mA, int nA, int mM, int nM) {
+    int rid = blockIdx.y * blockDim.y + threadIdx.y;
+    int cid = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(rid < mA && cid < nA) {
+        float sum = 0;
+        int startx = rid - mM / 2, starty = cid - nM / 2;
+        for(int i=0; i<mM; i++) 
+            for(int j=0; j<nM; j++) 
+                if(startx + i >= 0 && startx + i < mA && starty + j >= 0 && starty + j < nA) 
+                    sum += A[(startx+i)*nA+(starty+j)] * M[i*nM+j];
+        R[rid*nA+cid] = sum;
+    }
+}
+
+__global__ void convolve(unsigned char* img_in, float* mask, int* img_out, 
+                        int height, int width, int* min, int* max) {
     int rid = blockIdx.y * blockDim.y + threadIdx.y;
     int cid = blockIdx.x * blockDim.x + threadIdx.x;
 
     if(rid < height && cid < width) {
-        int gradX = 0, gradY = 0;
+        float val = 0;
+        int startx = rid - MASK_WIDTH / 2, starty = cid - MASK_WIDTH / 2;
         
-        if(cid - 1 >= 0) 
-            gradX += img_in[rid*width+(cid-1)];
-        if(cid + 1 < width)
-            gradX -= img_in[rid*width+(cid+1)];
+        for(int i=0; i<MASK_WIDTH; i++) 
+            for(int j=0; j<MASK_WIDTH; j++) 
+                if(startx + i >= 0 && startx + i < height && starty + j >= 0 && starty + j < width) 
+                    val += img_in[(startx+i)*width+(starty+j)] * mask[i*MASK_WIDTH+j];
         
-        if(rid - 1 >= 0) 
-            gradY += img_in[(rid-1)*width+cid];
-        if(rid + 1 < height)
-            gradY -= img_in[(rid+1)*width+cid];
+        img_out[rid*width+cid] = (int) val;
         
-        int val = gradX + gradY;
-        
-        img_out[rid*width+cid] = val;
-        atomicMin(min, val);
-        atomicMax(max, val);
+        atomicMin(min, (int) val);
+        atomicMax(max, (int) val);
     }
 }
 
@@ -64,16 +77,22 @@ __global__ void normalize(int* img_in, unsigned char* img_out, int height, int w
 
 int main() {
     unsigned char *img_in, *img_out;
-    int width, height, bpp, min=INT_MAX, max=INT_MIN;
-    int sizeimgin, sizeimggray, sizeimgint, sizeimgout;
+    int width, height, bpp;
+
+    float mask[MASK_WIDTH][MASK_WIDTH] = {{0, 1, 0}, {1, 0, -1}, {0, -1, 0}};
+    
+    int min=INT_MAX, max=INT_MIN;
+    int sizeimgin, sizeimggray, sizeimgint, sizeimgout, sizemask;
 
     unsigned char *d_img_in, *d_img_gray, *d_img_out;
+    float *d_mask;
     int *d_img_int, *d_min, *d_max; 
 
     img_in = stbi_load("lena.jpeg", &width, &height, &bpp, 0);
 
     sizeimgin = width * height * bpp * sizeof(unsigned char);
     sizeimggray = width * height * 1 * sizeof(unsigned char);
+    sizemask =  MASK_WIDTH * MASK_WIDTH * sizeof(float);
     sizeimgint = width * height * 1 * sizeof(int);
     sizeimgout = width * height * 1 * sizeof(unsigned char);
 
@@ -81,12 +100,14 @@ int main() {
 
     cudaMalloc((void**) &d_img_in, sizeimgin);
     cudaMalloc((void**) &d_img_gray, sizeimggray);
+    cudaMalloc((void**) &d_mask, sizemask);
     cudaMalloc((void**) &d_img_int, sizeimgint);
     cudaMalloc((void**) &d_min, sizeof(int));
     cudaMalloc((void**) &d_max, sizeof(int));
     cudaMalloc((void**) &d_img_out, sizeimgout);
 
     cudaMemcpy(d_img_in, img_in, sizeimgin, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_mask, mask, sizemask, cudaMemcpyHostToDevice);
     cudaMemcpy(d_min, &min, sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_max, &max, sizeof(int), cudaMemcpyHostToDevice);
     
@@ -95,7 +116,7 @@ int main() {
 
     rgbToGray<<<gridDim, blockDim>>>(d_img_in, d_img_gray, height, width);
 
-    emboss<<<gridDim, blockDim>>>(d_img_gray, d_img_int, height, width, d_min, d_max);
+    convolve<<<gridDim, blockDim>>>(d_img_gray, d_mask, d_img_int, height, width, d_min, d_max);
 
     cudaMemcpy(&min, d_min, sizeof(int), cudaMemcpyDeviceToHost);
     cudaMemcpy(&max, d_max, sizeof(int), cudaMemcpyDeviceToHost);
@@ -108,6 +129,7 @@ int main() {
 
     cudaFree(d_img_in);
     cudaFree(d_img_gray);
+    cudaFree(d_mask);
     cudaFree(d_img_int);
     cudaFree(d_min);
     cudaFree(d_max);
