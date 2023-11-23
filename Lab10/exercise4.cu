@@ -62,7 +62,7 @@ __global__ void merge_kernel(int* A, int m, int* B, int n, int* C) {
 
 int main() {
     int *A, *B, *C;
-    int m, n, sizeA, sizeB, sizeC;
+    int m, n, t, sizeA, sizeB, sizeC;
     int *d_A, *d_B, *d_C;
 
     printf("Enter the size of the first array, A: ");
@@ -87,6 +87,9 @@ int main() {
     for(int i=0; i<n; i++) 
         scanf("%d", B+i);
 
+    printf("Enter the number of threads to generate: ");
+    scanf("%d", &t);
+
     cudaMalloc((void**) &d_A, sizeA);
     cudaMalloc((void**) &d_B, sizeB);
     cudaMalloc((void**) &d_C, sizeC);
@@ -94,7 +97,7 @@ int main() {
     cudaMemcpy(d_A, A, sizeA, cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, B, sizeB, cudaMemcpyHostToDevice);
 
-    merge_kernel<<<1, ceil((m+n)/5.0)>>>(d_A, m, d_B, n, d_C);
+    merge_kernel<<<1, ceil((float)(m+n)/t)>>>(d_A, m, d_B, n, d_C);
 
     cudaMemcpy(C, d_C, sizeC, cudaMemcpyDeviceToHost);
 
