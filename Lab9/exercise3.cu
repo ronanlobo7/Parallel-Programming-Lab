@@ -27,22 +27,6 @@ __global__ void rgbToGray(unsigned char* img_in, unsigned char* img_out, int hei
     }
 }
 
-__global__ void conv2D(float* A, float* M, float* R, 
-                        int mA, int nA, int mM, int nM) {
-    int rid = blockIdx.y * blockDim.y + threadIdx.y;
-    int cid = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if(rid < mA && cid < nA) {
-        float sum = 0;
-        int startx = rid - mM / 2, starty = cid - nM / 2;
-        for(int i=0; i<mM; i++) 
-            for(int j=0; j<nM; j++) 
-                if(startx + i >= 0 && startx + i < mA && starty + j >= 0 && starty + j < nA) 
-                    sum += A[(startx+i)*nA+(starty+j)] * M[i*nM+j];
-        R[rid*nA+cid] = sum;
-    }
-}
-
 __global__ void convolve(unsigned char* img_in, float* mask, int* img_out, 
                         int height, int width, int* min, int* max) {
     int rid = blockIdx.y * blockDim.y + threadIdx.y;
