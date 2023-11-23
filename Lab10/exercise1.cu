@@ -10,10 +10,11 @@ __global__ void convolve(float* N, float* P, int width, int mask_width) {
 	int tid = blockDim.x * blockIdx.x + threadIdx.x;
 	if(tid < width) {
 		int start = tid - mask_width / 2;
-		P[tid] = 0.0;
+		float sum = 0.0;
 		for(int i=0; i<mask_width; i++) 
 			if(start + i >= 0 && start + i < width)
-				P[tid] += N[start + i] * M[i];
+				sum += N[start + i] * M[i];
+		P[tid] = sum;
 	}		
 }
 
@@ -54,7 +55,8 @@ int main(void) {
 	cudaMalloc((void**)&d_P, size_N);
 	
 	cudaMemcpy(d_N, h_N, size_N, cudaMemcpyHostToDevice);
-	cudaMemcpyToSymbol(M, h_M, size_M);	
+	cudaMemcpyToSymbol(M, h_M, size_M);
+		
 	convolve<<<ceil(width/256.0), 256>>>(d_N, d_P, width, mask_width);
 	
 	cudaMemcpy(h_P, d_P, size_N, cudaMemcpyDeviceToHost);
